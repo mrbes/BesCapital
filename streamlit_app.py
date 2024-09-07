@@ -1,151 +1,119 @@
 import streamlit as st
 import pandas as pd
-import math
-from pathlib import Path
+import numpy as np
+import matplotlib.pyplot as plt
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
-)
+# Fonction pour créer le graphique
+def plot_halving_projection():
+    # Recharger les données depuis le fichier CSV
+    file_path = 'data/uptated_bitcoin.csv'  # Ajustez le chemin selon l'endroit où se trouve votre fichier
+    df = pd.read_csv(file_path)
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+    # Convertir la colonne 'Date' au format datetime
+    df['Date'] = pd.to_datetime(df['Date'])
 
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+    # Définir les dates des halvings
+    halving_dates = pd.to_datetime(['2012-11-28', '2016-07-09', '2020-05-11', '2024-04-20'])
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+    # Utiliser le nombre exact de jours entre chaque halving pour les dates de fin personnalisées
+    end_dates_custom = [
+        halving_dates[0] + pd.DateOffset(days=1319),
+        halving_dates[1] + pd.DateOffset(days=1402),
+        halving_dates[2] + pd.DateOffset(days=1440),
+        halving_dates[3] + pd.DateOffset(days=1440)
+    ]
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+    # Préparer les données pour chaque halving avec les jours ajustés
+    scaled_df_list_custom = []
+    price_2024_halving = df[df['Date'] == halving_dates[-1]]['Price'].values[0]
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+    for i in range(len(halving_dates)):
+        start_date = halving_dates[i]
+        end_date = end_dates_custom[i]
+        df_halving = df[(df['Date'] >= start_date) & (df['Date'] <= end_date)].copy()
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
+        start_price = df_halving.iloc[0]['Price']
+        df_halving['Scaled Price'] = (df_halving['Price'] / start_price) * price_2024_halving
+        df_halving['Days Since Halving'] = (df_halving['Date'] - start_date).dt.days
+        scaled_df_list_custom.append(df_halving[['Days Since Halving', 'Scaled Price']])
 
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
+    # Initialiser aligned_df comme une copie du premier DF
+    aligned_df = scaled_df_list_custom[0].copy()
 
-    return gdp_df
+    # Recalculer les performances sur la période complète et les "Halving Projected Prices"
+    performance_custom = {}
+    projected_prices_by_halving_custom = {}
 
-gdp_df = get_gdp_data()
+    for i in range(len(scaled_df_list_custom) - 1):  # Exclude Halving 4 projection
+        start_price = scaled_df_list_custom[i].iloc[0]['Scaled Price']
+        end_price = scaled_df_list_custom[i].iloc[-1]['Scaled Price']
+        performance_custom[f'Halving {i+1}'] = (end_price - start_price) / start_price * 100
+        projected_prices_by_halving_custom[f'Halving {i+1}'] = price_2024_halving * (1 + performance_custom[f'Halving {i+1}'] / 100)
 
-# -----------------------------------------------------------------------------
-# Draw the actual page
+    # Assurez-vous que ces variables sont correctement définies
+    halving_colors = {
+        'Halving 1': {'performance': 'blue', 'projection': 'blue'},
+        'Halving 2': {'performance': 'green', 'projection': 'green'},
+        'Halving 3': {'performance': 'red', 'projection': 'red'},
+        'Halving 4': {'performance': 'purple', 'projection': 'violet'},
+    }
+    halving_styles = {
+        'Halving 1': {'performance': '-', 'projection': '--'},
+        'Halving 2': {'performance': '-', 'projection': '--'},
+        'Halving 3': {'performance': '-', 'projection': '--'},
+        'Halving 4': {'performance': '-', 'projection': '--'},
+    }
+    average_color = 'black'
+    average_style = '--'
 
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
+    # Créer le graphique mis à jour avec les "Halving Projected Prices" pour la période complète
+    plt.figure(figsize=(16, 9))
 
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
+    for i in range(len(scaled_df_list_custom)):
+        halving_label = f'Halving {i+1}'
 
-# Add some spacing
-''
-''
+        # Tracer la courbe de performance avec épaisseur personnalisée pour le Halving 4
+        plt.plot(scaled_df_list_custom[i]['Days Since Halving'],
+                 scaled_df_list_custom[i]['Scaled Price'],
+                 label=f'{halving_label} Performance on 2024 Price',
+                 color=halving_colors[halving_label]['performance'],
+                 linestyle=halving_styles[halving_label]['performance'],
+                 linewidth=2 if halving_label == 'Halving 4' else 1)
 
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
+    # Ajouter la courbe de performance moyenne avec épaisseur à 1
+    plt.plot(aligned_df['Days Since Halving'], aligned_df['Scaled Price'], color=average_color, linestyle=average_style, linewidth=1,
+             label='Average Performance on 2024 Price')
 
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
+    # Ajouter la ligne horizontale pour le prix de départ en 2024
+    plt.axhline(y=price_2024_halving, color='black', linestyle='--', label=f'2024 Halving Price (${price_2024_halving:,.2f})')
 
-countries = gdp_df['Country Code'].unique()
+    # Ajouter les prix projetés sauf pour le Halving 4
+    for i, (key, value) in enumerate(projected_prices_by_halving_custom.items()):
+        plt.axhline(y=value, color=halving_colors[f'Halving {i+1}']['projection'],
+                    linestyle=halving_styles[f'Halving {i+1}']['projection'],
+                    label=f'{key} Projected Price (${value:,.2f})')
 
-if not len(countries):
-    st.warning("Select at least one country")
+    # Mettre l'axe y en échelle logarithmique en commençant à $10,000
+    plt.yscale('log')
 
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
+    # Ajouter des étiquettes numériques à l'axe y, en commençant à $10,000
+    plt.yticks([10**i for i in range(4, int(np.log10(max(aligned_df['Scaled Price']))+2))],
+               [f'${10**i:,.0f}' for i in range(4, int(np.log10(max(aligned_df['Scaled Price']))+2))])
 
-''
-''
-''
+    # Ajouter une annotation au milieu du graphique
+    plt.annotate('@Besbtc', xy=(0.5, 0.5), xycoords='axes fraction', fontsize=20, color='gray', ha='center')
 
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
+    plt.title('Projected Bitcoin Price After 2024 Halving Based on Past Performances')
+    plt.xlabel('Days Since Halving')
+    plt.ylabel('Projected Bitcoin Price (USD)')
+    plt.legend()
+    plt.grid(True, which="both", ls="--")
 
-st.header('GDP over time', divider='gray')
+    # Afficher le graphique dans Streamlit
+    st.pyplot(plt)
 
-''
+# Titre de l'application
+st.title("Bitcoin Halving Performance Dashboard")
 
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+# Appel de la fonction pour afficher le graphique
+plot_halving_projection()
