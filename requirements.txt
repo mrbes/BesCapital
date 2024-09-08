@@ -2,8 +2,5 @@ streamlit
 pandas
 numpy
 matplotlib
-<<<<<<< HEAD
-=======
 arch
 statsmodels
->>>>>>> ed5e4b7 (Initial commit avec les nouveaux scripts et la mise à jour de l'application Streamlit)
