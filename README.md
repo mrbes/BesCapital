@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # Bitcoin Halving Performance Dashboard
 
 This Streamlit app visualizes the historical performance of Bitcoin around halving events. 
